@@ -112,6 +112,41 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(e.code, {"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
             except Exception as e:
                 return self._send(502, {"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/matchday":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            group=(query.get("group",["1"])[0] or "1").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4 or not group.isdigit():
+                return self._send(400,{"error":"invalid_league_season_or_group"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getmatchdata/"+league+"/"+season+"/"+group,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                if not isinstance(payload,list): return self._send(502,{"provider":"OpenLigaDB","status":"UNEXPECTED_RESPONSE"})
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for x in payload:
+                    if not isinstance(x,dict): continue
+                    t1=x.get("team1") or {}; t2=x.get("team2") or {}; results=x.get("matchResults") or []
+                    ft=next((z for z in reversed(results) if z.get("resultTypeID")==2),None)
+                    ht=next((z for z in reversed(results) if z.get("resultTypeID")==1),None)
+                    matches.append({"id":x.get("matchID"),"provider_match_id":x.get("matchID"),"sport":"Football","competition_name":x.get("leagueName"),"league_shortcut":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"round":(x.get("group") or {}).get("groupName"),"group_order_id":(x.get("group") or {}).get("groupOrderID"),"kickoff_utc":x.get("matchDateTimeUTC") or x.get("matchDateTime"),"homeTeam":t1.get("teamName"),"awayTeam":t2.get("teamName"),"home_team_id":t1.get("teamId"),"away_team_id":t2.get("teamId"),"home_logo":t1.get("teamIconUrl"),"away_logo":t2.get("teamIconUrl"),"score":str(ft.get("pointsTeam1"))+":"+str(ft.get("pointsTeam2")) if ft else None,"halftime_score":str(ht.get("pointsTeam1"))+":"+str(ht.get("pointsTeam2")) if ht else None,"status":"finished" if x.get("matchIsFinished") else "scheduled","source":"OpenLigaDB","retrieved_at_utc":stamp})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"group":group,"count":len(matches),"matches":matches,"retrieved_at_utc":stamp})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/last-changed":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            group=(query.get("group",["1"])[0] or "1").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4 or not group.isdigit():
+                return self._send(400,{"error":"invalid_league_season_or_group"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getlastchangedate/"+league+"/"+season+"/"+group,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"group":group,"last_changed":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/openligadb/matches":
             league = (query.get("league", ["bl1"])[0] or "bl1").strip()
             season = (query.get("season", ["2026"])[0] or "2026").strip()

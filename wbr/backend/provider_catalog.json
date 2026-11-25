@@ -38,11 +38,12 @@
       "name": "MoviOdds",
       "secret_env": "MOVIODDS_API_KEY",
       "scope": "odds",
-      "integration_status": "adapter_present_unverified",
-      "enabled": false,
+      "integration_status": "verified",
+      "enabled": true,
       "quota_remaining": null,
       "last_success": null,
-      "last_error": null
+      "last_error": null,
+      "notes": "Server-side MOVIODDS_API_KEY configured and live REST endpoint tested successfully on 2026-11-25. Returns bet365-only pre-match/in-play odds; use documented per-sport market group IDs, polled_at, suspended and group_status. No bookmaker comparison; verify current bet365 price before betting. Free-plan limits apply."
     },
     {
       "name": "SportScore",

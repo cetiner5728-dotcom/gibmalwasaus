@@ -70,6 +70,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path.rstrip("/") or "/"
         routes = {
+            "/": lambda: {"status":"ok","service":"wbr-backend","message":"WBR backend is running","checks":{"health":"/health","providers":"/api/v1/providers","matches":"/api/v1/matches","odds":"/api/v1/odds","sportscore_matches":"/api/v1/sportscore/matches"}},
             "/health": lambda: {"status":"ok","service":"wbr-backend","mode":"provider-ready","data_dir_exists":DATA.exists()},
             "/api/v1/health": lambda: {"status":"ok","service":"wbr-backend","mode":"provider-ready","data_dir_exists":DATA.exists()},
             "/api/v1/sources": lambda: read_json("sources.json", []),

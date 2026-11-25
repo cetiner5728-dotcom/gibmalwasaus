@@ -75,18 +75,29 @@ class Handler(BaseHTTPRequestHandler):
             sport = (query.get("sport", ["football"])[0] or "football").lower()
             if sport not in ("football", "basketball", "cricket", "tennis"):
                 return self._send(400, {"error":"invalid_sport","allowed":["football","basketball","cricket","tennis"]})
+            requested_date = query.get("date", [datetime.now(timezone.utc).date().isoformat()])[0]
+            status_filter = (query.get("status", ["live"])[0] or "live").lower()
+            if status_filter not in ("live", "finished", "upcoming"):
+                return self._send(400, {"error":"invalid_status","allowed":["live","finished","upcoming"]})
             try:
                 from urllib.parse import urlencode
-                payload, headers = fetch_json("https://sportscore.com/api/v1/fixtures/?" + urlencode({"sport":sport,"limit":50}), {"Accept":"application/json","User-Agent":"WBR/1.0"})
+                params = {"sport":sport,"date":requested_date,"status":status_filter,"limit":50}
+                payload, headers = fetch_json("https://sportscore.com/api/v1/fixtures/?" + urlencode(params), {"Accept":"application/json","User-Agent":"WBR/1.0"})
                 raw = payload.get("matches", payload.get("data", [])) if isinstance(payload,dict) else payload
-                if not isinstance(raw,list): return self._send(502, {"provider":"SportScore","status":"UNEXPECTED_RESPONSE","message":"Fixture list missing"})
+                if not isinstance(raw,list):
+                    return self._send(502, {"provider":"SportScore","status":"UNEXPECTED_RESPONSE","message":"Expected matches array","response_type":type(payload).__name__})
                 stamp = datetime.now(timezone.utc).isoformat()
                 matches = []
                 for x in raw:
                     if not isinstance(x,dict): continue
                     hs=x.get("home_score"); aw=x.get("away_score")
-                    matches.append({"id":x.get("id") or x.get("slug"),"provider_match_id":x.get("id") or x.get("slug"),"sport":sport,"homeTeam":x.get("home"),"awayTeam":x.get("away"),"home_score":hs,"away_score":aw,"score":str(hs)+":"+str(aw) if hs is not None and aw is not None else None,"status":x.get("status"),"status_text":x.get("status_text"),"kickoff_utc":x.get("time"),"home_logo":x.get("home_logo"),"away_logo":x.get("away_logo"),"source":"SportScore","retrieved_at_utc":stamp})
-                return self._send(200, {"provider":"SportScore","status":"OK","sport":sport,"count":len(matches),"retrieved_at_utc":stamp,"attribution_required":True,"attribution_url":"https://sportscore.com/","matches":matches})
+                    slug=x.get("slug") or x.get("match_slug")
+                    match_status=(x.get("status") or "unknown").lower()
+                    # Strictly enforce the requested status; never label recent finished games as live.
+                    if status_filter == "live" and match_status not in ("live","in_play","in-play","1h","2h","ht","extra_time","penalties"):
+                        continue
+                    matches.append({"id":slug,"provider_match_id":slug,"slug":slug,"sport":sport,"competition":x.get("competition"),"homeTeam":x.get("home"),"awayTeam":x.get("away"),"home_score":hs,"away_score":aw,"score":str(hs)+":"+str(aw) if hs is not None and aw is not None else None,"status":match_status,"status_text":x.get("status_text"),"kickoff_utc":x.get("time"),"home_logo":x.get("home_logo"),"away_logo":x.get("away_logo"),"source":"SportScore","retrieved_at_utc":stamp})
+                return self._send(200, {"provider":"SportScore","status":"OK","sport":sport,"date":requested_date,"status_filter":status_filter,"count":len(matches),"retrieved_at_utc":stamp,"attribution_required":True,"attribution_url":"https://sportscore.com/","matches":matches,"note":"Only matches matching the requested status are returned. Empty live list means no live matches were reported for this UTC date."})
             except urllib.error.HTTPError as e:
                 return self._send(e.code, {"provider":"SportScore","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
             except Exception as e:

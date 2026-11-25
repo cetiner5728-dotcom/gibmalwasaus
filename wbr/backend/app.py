@@ -74,6 +74,60 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
+        if path == "/api/v1/open-matchday/matches":
+            import re,csv,io
+            folder=(query.get("league",["ENG_1_premier-league"])[0] or "").strip()
+            kind=(query.get("kind",["fixtures"])[0] or "fixtures").strip().lower()
+            season=(query.get("season",["2627"])[0] or "2627").strip()
+            if not re.fullmatch(r"[A-Z0-9_]+_[a-z0-9-]+",folder) or kind not in ("fixtures","results","goals") or season!="2627":
+                return self._send(400,{"provider":"Open-Matchday","status":"INVALID_PARAMETERS","allowed_kinds":["fixtures","results","goals"],"season":"2627"})
+            url="https://raw.githubusercontent.com/oladeeayo/open-matchday/master/data/"+folder+"/"+kind+"_"+season+".csv"
+            try:
+                req=urllib.request.Request(url,headers={"Accept":"text/csv","User-Agent":"WBR/1.0"})
+                with urllib.request.urlopen(req,timeout=25) as response: raw=response.read().decode("utf-8-sig"); source_status=response.status
+                rows=list(csv.DictReader(io.StringIO(raw)))
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for row in rows:
+                    def num(k):
+                        v=row.get(k)
+                        try: return int(v) if v not in (None,"") else None
+                        except (ValueError,TypeError): return None
+                    home=row.get("home"); away=row.get("away")
+                    matches.append({"provider_match_id":None,"sport":"Football","competition":folder,"round":num("gw"),"date":row.get("date") or None,"time":row.get("time") or None,"homeTeam":home or None,"awayTeam":away or None,"home_score":num("ft_home"),"away_score":num("ft_away"),"halftime_home":num("ht_home"),"halftime_away":num("ht_away"),"home_shots":num("home_shots"),"away_shots":num("away_shots"),"home_corners":num("home_corners"),"away_corners":num("away_corners"),"home_yellow":num("home_yellow"),"away_yellow":num("away_yellow"),"goal_minutes":row.get("goal_minutes") or None,"status":"finished" if kind=="results" else "scheduled","source":"Open-Matchday","retrieved_at_utc":stamp})
+                return self._send(200,{"provider":"Open-Matchday","status":"OK","league":folder,"kind":kind,"season":season,"count":len(matches),"matches":matches,"license":"Informational/non-commercial only","attribution_url":"https://github.com/oladeeayo/open-matchday","source_http_status":source_status,"retrieved_at_utc":stamp,"note":"Daily snapshot, not live. Blank values remain null. Use only for non-commercial personal/research purposes; upstream provider rights also apply."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"Open-Matchday","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"Open-Matchday","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/espn/scoreboard":
+            sport=(query.get("sport",["soccer"])[0] or "soccer").strip().lower()
+            league=(query.get("league",["eng.1"])[0] or "eng.1").strip().lower()
+            day=(query.get("date",[""])[0] or "").strip()
+            allowed={"soccer":{"eng.1","esp.1","ger.1","ita.1","fra.1","ned.1","por.1","uefa.champions","uefa.europa","usa.1","aut.1"},"basketball":{"nba","wnba","mens-college-basketball"},"hockey":{"nhl"},"football":{"nfl","college-football"},"baseball":{"mlb"}}
+            if sport not in allowed or league not in allowed[sport]:
+                return self._send(400,{"provider":"ESPN","status":"INVALID_SPORT_OR_LEAGUE","allowed":allowed})
+            if day and (not day.isdigit() or len(day)!=8):
+                return self._send(400,{"provider":"ESPN","status":"INVALID_DATE","expected":"YYYYMMDD"})
+            endpoint="https://site.api.espn.com/apis/site/v2/sports/"+sport+"/"+league+"/scoreboard"+("?dates="+day if day else "")
+            try:
+                payload,headers=fetch_json(endpoint,{"Accept":"application/json","User-Agent":"Mozilla/5.0 WBR/1.0"})
+                events=payload.get("events",[]) if isinstance(payload,dict) else []
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for ev in events:
+                    comps=ev.get("competitions") or [{}]
+                    comp=comps[0] if comps else {}
+                    competitors=comp.get("competitors") or []
+                    home=next((x for x in competitors if x.get("homeAway")=="home"),{})
+                    away=next((x for x in competitors if x.get("homeAway")=="away"),{})
+                    status=((comp.get("status") or {}).get("type") or {})
+                    matches.append({"provider_match_id":ev.get("id"),"sport":sport,"competition":league,"kickoff_utc":ev.get("date"),"homeTeam":(home.get("team") or {}).get("displayName"),"awayTeam":(away.get("team") or {}).get("displayName"),"home_score":home.get("score"),"away_score":away.get("score"),"status":status.get("name"),"status_detail":status.get("detail"),"source":"ESPN","retrieved_at_utc":stamp})
+                return self._send(200,{"provider":"ESPN","status":"OK","sport":sport,"league":league,"date":day or None,"count":len(matches),"matches":matches,"live_feed":False,"note":"Public ESPN site scoreboard endpoint, undocumented and subject to change. No odds. Verify ESPN terms before commercial reuse.","retrieved_at_utc":stamp})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"ESPN","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"ESPN","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/openfootball/matches":
             league=(query.get("league",["de.1"])[0] or "de.1").strip().lower()
             season=(query.get("season",["2026-27"])[0] or "2026-27").strip()

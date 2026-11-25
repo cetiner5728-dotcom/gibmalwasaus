@@ -74,6 +74,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/v1/forecasts": lambda: read_json("forecasts.json", []),
             "/api/v1/providers": lambda: provider_status(),
             "/api/v1/provider-status": lambda: provider_status(),
+            "/api/v1/puntersedge/sports": lambda: read_json("puntersedge_sports.json", {"status":"NOT_IMPORTED","sports":[]}),
             "/api/v1/matches/canonical": lambda: read_json("canonical_matches.json", []),
             "/api/v1/odds/matched": lambda: {"odds":read_json("matched_odds.json", []),"matched_count":0,"unmatched_count":0,"status":"NO_IMPORTED_DATA"},
         }

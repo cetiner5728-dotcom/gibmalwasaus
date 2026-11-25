@@ -69,6 +69,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path.rstrip("/") or "/"
+        if path == "/api-check":
+            raw = "<!doctype html><html lang='de'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>WBR API-Prüfung</title><style>body{font:16px system-ui;background:#08111f;color:#eef;padding:20px;max-width:850px;margin:auto}section{background:#132238;border:1px solid #29405e;border-radius:12px;padding:16px;margin:14px 0}button{padding:12px 18px;background:#27d4c5;border:0;border-radius:8px;font-weight:bold}pre{white-space:pre-wrap;overflow-wrap:anywhere}.ok{color:#a7e66f}.bad{color:#ff8585}</style><h1>WBR · API-Prüfung</h1><p>Diese Seite läuft direkt auf demselben Backend. Kein Cross-Origin-Aufruf von GitHub Pages.</p><section><button onclick='run()'>Jetzt prüfen</button><p id='health'>Warte auf Prüfung.</p></section><section><h2>Provider-Status</h2><pre id='out'>Noch keine Daten.</pre></section><script>async function run(){let h=document.getElementById('health'),o=document.getElementById('out');h.textContent='Prüfe Health …';o.textContent='Lade Provider …';try{let a=await fetch('/health',{cache:'no-store'});let at=await a.text();if(!a.ok)throw Error('Health HTTP '+a.status+': '+at);h.innerHTML='<span class=ok>Backend erreichbar · HTTP '+a.status+'</span>';let b=await fetch('/api/v1/providers',{cache:'no-store'});let bt=await b.text();if(!b.ok)throw Error('Provider HTTP '+b.status+': '+bt);let d=JSON.parse(bt);o.textContent=JSON.stringify(d,null,2)}catch(e){h.innerHTML='<span class=bad>Fehler: '+e.message+'</span>';o.textContent='Provider-Prüfung fehlgeschlagen.'}}run();</script></html>".encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(raw)
+            return
         routes = {
             "/": lambda: {"status":"ok","service":"wbr-backend","message":"WBR backend is running","checks":{"health":"/health","providers":"/api/v1/providers","matches":"/api/v1/matches","odds":"/api/v1/odds","sportscore_matches":"/api/v1/sportscore/matches"}},
             "/health": lambda: {"status":"ok","service":"wbr-backend","mode":"provider-ready","data_dir_exists":DATA.exists()},

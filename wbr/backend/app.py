@@ -40,18 +40,27 @@ def provider_status():
     for p in catalog["providers"]:
         env = p.get("secret_env")
         configured = bool(os.environ.get(env, "")) if env else None
-        status = "PENDING_IMPLEMENTATION"
-        if p["integration_status"] == "verified":
+        integration = p.get("integration_status")
+        if integration == "verified":
             status = "VERIFIED"
-        elif p["integration_status"] == "adapter_present" and not env:
-            status = "READY_NO_KEY"
-        elif p["name"] in ("SportScore","SportsEvents24") and p["integration_status"] == "adapter_present_unverified":
-            status = "READY_TO_TEST_NO_KEY" if not env else ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET")
-        elif p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
-            status = ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET") if p["integration_status"] == "adapter_present_unverified" else ("CATALOGUE_TEST_READY" if configured else "MISSING_SERVER_SECRET")
-        elif p["integration_status"] == "verify_docs":
+        elif integration == "website_reference_only":
+            status = "WEBSITE_REFERENCE_ONLY"
+        elif integration == "importer_pending":
+            status = "IMPORTER_PENDING"
+        elif integration == "verify_docs":
             status = "DOCUMENTATION_REVIEW_REQUIRED"
-        items.append({"provider":p["name"],"configured":configured,"scope":p["scope"],"integration_status":p["integration_status"],"status":status})
+        elif integration == "adapter_pending":
+            status = "PENDING_IMPLEMENTATION"
+        elif integration in ("adapter_present_unverified", "adapter_present_catalogue_test_only", "adapter_present"):
+            if env and not configured:
+                status = "MISSING_SERVER_SECRET"
+            elif integration == "adapter_present_catalogue_test_only":
+                status = "CATALOGUE_TEST_READY"
+            else:
+                status = "READY_TO_TEST" if env else "READY_TO_TEST_NO_KEY"
+        else:
+            status = "UNKNOWN_INTEGRATION_STATE"
+        items.append({"provider":p["name"],"configured":configured,"scope":p["scope"],"integration_status":integration,"status":status})
     return {"providers":items,"sync_protected":bool(SYNC_TOKEN),"storage":"ephemeral_render_filesystem","note":"Registration does not imply a working API adapter. Render Free data files are not persistent."}
 
 class Handler(BaseHTTPRequestHandler):

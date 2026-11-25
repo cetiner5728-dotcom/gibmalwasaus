@@ -10,6 +10,7 @@ DATA = Path(os.environ.get("WBR_DATA_DIR", "data"))
 SPORTAPI_KEY = os.environ.get("SPORTAPI_API_KEY", "")
 MOVIODDS_KEY = os.environ.get("MOVIODDS_API_KEY", "")
 PUNTERSEDGE_KEY = os.environ.get("PUNTERSEDGE_API_KEY", "")
+APIFOOTBALL_KEY = os.environ.get("APIFOOTBALL_API_KEY", "")
 SYNC_TOKEN = os.environ.get("WBR_SYNC_TOKEN", "")
 
 def read_json(name, default):
@@ -83,6 +84,68 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/")
+        if path == "/api/v1/apifootball/sync":
+            if not APIFOOTBALL_KEY: return self._send(503, {"error":"provider_not_configured","provider":"API-Football"})
+            if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled"})
+            if self.headers.get("X-WBR-Sync-Token","") != SYNC_TOKEN: return self._send(401, {"error":"unauthorized"})
+            try:
+                length = min(int(self.headers.get("Content-Length","0")), 4096)
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                return self._send(400, {"error":"invalid_json"})
+            mode = str(body.get("mode","date")).lower()
+            if mode not in ("date","live","status"): return self._send(400, {"error":"invalid_mode"})
+            if mode == "status":
+                endpoint = "https://v3.football.api-sports.io/status"
+            elif mode == "live":
+                endpoint = "https://v3.football.api-sports.io/fixtures?live=all"
+            else:
+                target = str(body.get("date") or date.today().isoformat())
+                try: date.fromisoformat(target)
+                except ValueError: return self._send(400, {"error":"invalid_date"})
+                endpoint = "https://v3.football.api-sports.io/fixtures?date=" + target + "&timezone=Europe%2FVienna"
+            try:
+                payload, headers = fetch_json(endpoint, {"x-apisports-key":APIFOOTBALL_KEY})
+                errors = payload.get("errors") if isinstance(payload,dict) else None
+                if errors:
+                    return self._send(502, {"provider":"API-Football","status":"API_ERROR","errors":errors})
+                response = payload.get("response",[]) if isinstance(payload,dict) else []
+                stamp = datetime.now(timezone.utc).isoformat()
+                if mode in ("date","live"):
+                    normalized = []
+                    for item in response if isinstance(response,list) else []:
+                        fixture = item.get("fixture",{}) or {}
+                        teams = item.get("teams",{}) or {}
+                        goals = item.get("goals",{}) or {}
+                        league = item.get("league",{}) or {}
+                        status_obj = fixture.get("status",{}) or {}
+                        normalized.append({
+                            "id":fixture.get("id"),"fixture_id":fixture.get("id"),
+                            "kickoff_utc":fixture.get("date"),
+                            "sport":"Football","competition_name":league.get("name"),
+                            "league_id":league.get("id"),"season":league.get("season"),
+                            "country":league.get("country"),"round":league.get("round"),
+                            "homeTeam":(teams.get("home") or {}).get("name"),
+                            "home_team_id":(teams.get("home") or {}).get("id"),
+                            "awayTeam":(teams.get("away") or {}).get("name"),
+                            "away_team_id":(teams.get("away") or {}).get("id"),
+                            "score":str(goals.get("home"))+":"+str(goals.get("away")) if goals.get("home") is not None and goals.get("away") is not None else None,
+                            "status":status_obj.get("short"),"elapsed":status_obj.get("elapsed"),
+                            "source":"API-Football","provider_match_id":fixture.get("id"),
+                            "retrieved_at_utc":stamp
+                        })
+                    write_json("matches.json",normalized)
+                result = {"provider":"API-Football","status":"OK","mode":mode,"fixtures":len(response) if isinstance(response,list) else None,
+                          "requests_remaining":headers.get("x-ratelimit-requests-remaining"),
+                          "minute_requests_remaining":headers.get("x-ratelimit-remaining"),
+                          "account":payload.get("response") if mode=="status" and isinstance(payload,dict) else None,
+                          "retrieved_at_utc":stamp}
+                write_json("apifootball_last_sync.json",result)
+                return self._send(200,result)
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"API-Football","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"API-Football","status":"ERROR","message":str(e)[:300]})
         if path == "/api/v1/puntersedge/odds":
             if not PUNTERSEDGE_KEY: return self._send(503, {"error":"provider_not_configured"})
             if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled"})

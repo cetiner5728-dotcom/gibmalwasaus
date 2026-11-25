@@ -13,6 +13,8 @@ PUNTERSEDGE_KEY = os.environ.get("PUNTERSEDGE_API_KEY", "")
 APIFOOTBALL_KEY = os.environ.get("APIFOOTBALL_API_KEY", "")
 SPORTSCORE_KEY = os.environ.get("SPORTSCORE_API_KEY", "")
 STATSHAWK_KEY = os.environ.get("STATSHAWK_API_KEY", "")
+FOOTBALL_DATA_KEY = os.environ.get("FOOTBALL_DATA_ORG_API_KEY", "")
+SPORTMONKS_TOKEN = os.environ.get("SPORTMONKS_API_TOKEN", "")
 SYNC_TOKEN = os.environ.get("WBR_SYNC_TOKEN", "")
 
 def read_json(name, default):
@@ -110,6 +112,66 @@ class Handler(BaseHTTPRequestHandler):
                     sources.append({"provider":"StatsHawk","status":"ERROR","message":str(e)[:200]})
             else:
                 sources.append({"provider":"StatsHawk","status":"MISSING_SERVER_SECRET","required_env":"STATSHAWK_API_KEY"})
+            # API-Football: season-filtered catalogue. One request per catalogue refresh.
+            if APIFOOTBALL_KEY:
+                try:
+                    payload, headers=fetch_json("https://v3.football.api-sports.io/leagues?season="+season,{"x-apisports-key":APIFOOTBALL_KEY,"Accept":"application/json"})
+                    errors=payload.get("errors") if isinstance(payload,dict) else None
+                    if errors:
+                        sources.append({"provider":"API-Football","status":"API_ERROR","message":str(errors)[:200]})
+                    else:
+                        raw=payload.get("response",[]) if isinstance(payload,dict) else []
+                        added=0
+                        for x in raw if isinstance(raw,list) else []:
+                            if not isinstance(x,dict): continue
+                            league=x.get("league") or {}; country=x.get("country") or {}
+                            catalog.append({"provider":"API-Football","provider_id":league.get("id"),"name":league.get("name"),"slug":str(league.get("id")) if league.get("id") is not None else None,"season":season,"sport":"Football","country":country.get("name"),"kind":league.get("type"),"logo":league.get("logo"),"coverage":(x.get("seasons") or [{}])[-1].get("coverage") if x.get("seasons") else None})
+                            added+=1
+                        sources.append({"provider":"API-Football","status":"OK","count":added,"requests_remaining":headers.get("x-ratelimit-requests-remaining"),"minute_requests_remaining":headers.get("x-ratelimit-remaining")})
+                except urllib.error.HTTPError as e:
+                    sources.append({"provider":"API-Football","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+                except Exception as e:
+                    sources.append({"provider":"API-Football","status":"ERROR","message":str(e)[:200]})
+            else:
+                sources.append({"provider":"API-Football","status":"MISSING_SERVER_SECRET","required_env":"APIFOOTBALL_API_KEY"})
+            # football-data.org: competitions visible to this account/plan.
+            if FOOTBALL_DATA_KEY:
+                try:
+                    payload, headers=fetch_json("https://api.football-data.org/v4/competitions",{"X-Auth-Token":FOOTBALL_DATA_KEY,"Accept":"application/json"})
+                    raw=payload.get("competitions",[]) if isinstance(payload,dict) else []
+                    added=0
+                    for x in raw if isinstance(raw,list) else []:
+                        if not isinstance(x,dict): continue
+                        area=x.get("area") or {}; current=x.get("currentSeason") or {}
+                        start=str(current.get("startDate") or "")
+                        if start and start[:4]!=season: continue
+                        catalog.append({"provider":"football-data.org","provider_id":x.get("id"),"name":x.get("name"),"slug":x.get("code"),"season":season if start else None,"sport":"Football","country":area.get("name"),"kind":x.get("type"),"logo":x.get("emblem"),"coverage":"account_accessible"})
+                        added+=1
+                    sources.append({"provider":"football-data.org","status":"OK","count":added,"account_competitions":len(raw) if isinstance(raw,list) else None,"note":"Only competitions visible to this API account are listed."})
+                except urllib.error.HTTPError as e:
+                    sources.append({"provider":"football-data.org","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+                except Exception as e:
+                    sources.append({"provider":"football-data.org","status":"ERROR","message":str(e)[:200]})
+            else:
+                sources.append({"provider":"football-data.org","status":"MISSING_SERVER_SECRET","required_env":"FOOTBALL_DATA_ORG_API_KEY"})
+            # Sportmonks: first catalogue page only to avoid unbounded quota usage.
+            if SPORTMONKS_TOKEN:
+                try:
+                    payload, headers=fetch_json("https://api.sportmonks.com/v3/football/leagues?api_token="+SPORTMONKS_TOKEN+"&per_page=100",{"Accept":"application/json"})
+                    raw=payload.get("data",[]) if isinstance(payload,dict) else []
+                    added=0
+                    for x in raw if isinstance(raw,list) else []:
+                        if not isinstance(x,dict): continue
+                        catalog.append({"provider":"Sportmonks","provider_id":x.get("id"),"name":x.get("name"),"slug":str(x.get("id")) if x.get("id") is not None else None,"season":season,"sport":"Football","country":None,"kind":None,"logo":None,"coverage":"subscription_accessible"})
+                        added+=1
+                    pagination=payload.get("pagination",{}) if isinstance(payload,dict) else {}
+                    sources.append({"provider":"Sportmonks","status":"OK","count":added,"has_more":pagination.get("has_more") if isinstance(pagination,dict) else None,"note":"First page only; additional pages are not yet fetched."})
+                except urllib.error.HTTPError as e:
+                    sources.append({"provider":"Sportmonks","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+                except Exception as e:
+                    sources.append({"provider":"Sportmonks","status":"ERROR","message":str(e)[:200]})
+            else:
+                sources.append({"provider":"Sportmonks","status":"MISSING_SERVER_SECRET","required_env":"SPORTMONKS_API_TOKEN"})
             # Keep provider-specific identities; only deduplicate identical provider+slug pairs.
             unique={}
             for x in catalog:

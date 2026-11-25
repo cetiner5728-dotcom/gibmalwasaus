@@ -78,6 +78,47 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
+        if path == "/api/v1/moviodds/odds":
+            if not MOVIODDS_KEY:
+                return self._send(503,{"provider":"MoviOdds","status":"MISSING_SERVER_SECRET","required_env":"MOVIODDS_API_KEY"})
+            sport=(query.get("sport",["soccer"])[0] or "soccer").strip().lower()
+            groups=(query.get("groups",["40"])[0] or "40").strip()
+            in_play=(query.get("in_play",[""])[0] or "").strip()
+            allowed_sports={"soccer","tennis","basketball","american_football","ice_hockey","baseball","cricket","rugby_union","rugby_league","australian_rules","table_tennis","volleyball","handball","badminton","esports","darts","snooker","boxing","mma","futsal","bandy","floorball","field_hockey","gaelic_games","all"}
+            if sport not in allowed_sports:
+                return self._send(400,{"provider":"MoviOdds","status":"INVALID_SPORT","allowed":sorted(allowed_sports)})
+            if groups and (not all(part.strip().isdigit() for part in groups.split(",")) or len(groups)>120):
+                return self._send(400,{"provider":"MoviOdds","status":"INVALID_GROUPS","note":"Comma-separated numeric market group IDs expected."})
+            if in_play not in ("","0","1"):
+                return self._send(400,{"provider":"MoviOdds","status":"INVALID_IN_PLAY","allowed":["0","1"]})
+            from urllib.parse import urlencode
+            params={"sport":sport}
+            if groups: params["groups"]=groups
+            if in_play: params["in_play"]=in_play
+            endpoint="https://moviodds.com/odds?"+urlencode(params)
+            try:
+                payload,headers=fetch_json(endpoint,{"X-API-Key":MOVIODDS_KEY,"Accept":"application/json","User-Agent":"WBR/1.0"})
+                raw_matches=payload.get("matches",[]) if isinstance(payload,dict) else []
+                if not isinstance(raw_matches,list):
+                    return self._send(502,{"provider":"MoviOdds","status":"UNEXPECTED_RESPONSE","note":"Expected matches array; no data was imported."})
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for item in raw_matches:
+                    if not isinstance(item,dict): continue
+                    quotes=item.get("quotes") if isinstance(item.get("quotes"),list) else []
+                    clean_quotes=[]
+                    for q in quotes:
+                        if not isinstance(q,dict): continue
+                        price=q.get("odds_dec")
+                        try: price=float(price) if price is not None else None
+                        except (ValueError,TypeError): price=None
+                        clean_quotes.append({"fixture_id":q.get("fixture_id") or item.get("id"),"group_id":q.get("group_id"),"market_id":q.get("market_id"),"selection_id":q.get("sel_id"),"selection":q.get("label"),"odds_decimal":price,"suspended":bool(q.get("suspended",False)),"price_timestamp":q.get("ts")})
+                    matches.append({"provider_match_id":str(item.get("id")) if item.get("id") is not None else None,"sport":item.get("sport") or sport,"competition":item.get("league"),"homeTeam":item.get("home"),"awayTeam":item.get("away"),"kickoff_utc":item.get("kickoff_utc"),"in_play":bool(item.get("in_play",False)),"score":item.get("score"),"polled_at":item.get("polled_at"),"market_count":item.get("market_count"),"group_status":item.get("group_status"),"quotes":clean_quotes,"source":"MoviOdds","bookmaker":"bet365"})
+                return self._send(200,{"provider":"MoviOdds","status":"OK","sport":sport,"groups":groups or None,"in_play_filter":in_play or "all","count":len(matches),"quote_count":sum(len(m["quotes"]) for m in matches),"matches":matches,"source_bookmaker":"bet365","retrieved_at_utc":stamp,"server_time":payload.get("server_time") if isinstance(payload,dict) else None,"warming":bool(payload.get("warming",False)) if isinstance(payload,dict) else False,"note":"bet365 prices only. Check polled_at, group_status.stale and suspended before treating a price as current. Free plan limits and market coverage are set by MoviOdds."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"MoviOdds","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"MoviOdds","status":"ERROR","message":str(e)[:300]})
         if path == "/api/v1/open-matchday/matches":
             import re,csv,io
             folder=(query.get("league",["ENG_1_premier-league"])[0] or "").strip()

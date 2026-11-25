@@ -159,6 +159,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
             except Exception as e:
                 return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/current-group":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            if not league.replace("_","").isalnum(): return self._send(400,{"error":"invalid_league"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getcurrentgroup/"+league,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"current_group":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/groups":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4: return self._send(400,{"error":"invalid_league_or_season"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getavailablegroups/"+league+"/"+season,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(payload) if isinstance(payload,list) else None,"groups":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/goalscorers":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4: return self._send(400,{"error":"invalid_league_or_season"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getgoalgetters/"+league+"/"+season,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(payload) if isinstance(payload,list) else None,"goalscorers":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/openligadb/next-match":
             league=(query.get("league",["bl1"])[0] or "bl1").strip()
             if not league.replace("_","").isalnum(): return self._send(400,{"error":"invalid_league"})

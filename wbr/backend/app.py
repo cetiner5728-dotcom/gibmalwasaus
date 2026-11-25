@@ -115,12 +115,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/openligadb/matches":
             league = (query.get("league", ["bl1"])[0] or "bl1").strip()
             season = (query.get("season", ["2026"])[0] or "2026").strip()
+            match_filter = (query.get("filter", ["all"])[0] or "all").lower()
             if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4:
                 return self._send(400, {"error":"invalid_league_or_season"})
+            if match_filter not in ("all","upcoming","finished"):
+                return self._send(400, {"error":"invalid_filter","allowed":["all","upcoming","finished"]})
             try:
                 payload, headers = fetch_json("https://api.openligadb.de/getmatchdata/"+league+"/"+season, {"Accept":"application/json","User-Agent":"WBR/1.0"})
                 if not isinstance(payload,list): return self._send(502, {"provider":"OpenLigaDB","status":"UNEXPECTED_RESPONSE"})
                 stamp = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(timezone.utc)
                 matches=[]
                 for x in payload:
                     if not isinstance(x,dict): continue
@@ -128,12 +132,55 @@ class Handler(BaseHTTPRequestHandler):
                     results=x.get("matchResults") or []
                     ft=next((r for r in reversed(results) if r.get("resultTypeID")==2),None)
                     ht=next((r for r in reversed(results) if r.get("resultTypeID")==1),None)
-                    matches.append({"id":x.get("matchID"),"provider_match_id":x.get("matchID"),"sport":"Football","competition_name":x.get("leagueName"),"league_shortcut":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"round":(x.get("group") or {}).get("groupName"),"kickoff_utc":x.get("matchDateTimeUTC") or x.get("matchDateTime"),"homeTeam":t1.get("teamName"),"awayTeam":t2.get("teamName"),"home_team_id":t1.get("teamId"),"away_team_id":t2.get("teamId"),"home_logo":t1.get("teamIconUrl"),"away_logo":t2.get("teamIconUrl"),"score":str(ft.get("pointsTeam1"))+":"+str(ft.get("pointsTeam2")) if ft else None,"halftime_score":str(ht.get("pointsTeam1"))+":"+str(ht.get("pointsTeam2")) if ht else None,"status":"finished" if x.get("matchIsFinished") else "scheduled","source":"OpenLigaDB","retrieved_at_utc":stamp})
-                return self._send(200, {"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(matches),"retrieved_at_utc":stamp,"matches":matches,"auth_required":False})
+                    kickoff=x.get("matchDateTimeUTC") or x.get("matchDateTime")
+                    finished=bool(x.get("matchIsFinished"))
+                    try:
+                        dt=datetime.fromisoformat(kickoff.replace("Z","+00:00")) if kickoff else None
+                    except Exception: dt=None
+                    status="finished" if finished else ("live" if dt and dt <= now else "scheduled")
+                    if match_filter=="upcoming" and (finished or not dt or dt<=now): continue
+                    if match_filter=="finished" and not finished: continue
+                    matches.append({"id":x.get("matchID"),"provider_match_id":x.get("matchID"),"sport":"Football","competition_name":x.get("leagueName"),"league_shortcut":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"round":(x.get("group") or {}).get("groupName"),"kickoff_utc":kickoff,"homeTeam":t1.get("teamName"),"awayTeam":t2.get("teamName"),"home_team_id":t1.get("teamId"),"away_team_id":t2.get("teamId"),"home_logo":t1.get("teamIconUrl"),"away_logo":t2.get("teamIconUrl"),"score":str(ft.get("pointsTeam1"))+":"+str(ft.get("pointsTeam2")) if ft else None,"halftime_score":str(ht.get("pointsTeam1"))+":"+str(ht.get("pointsTeam2")) if ht else None,"status":status,"source":"OpenLigaDB","retrieved_at_utc":stamp})
+                matches.sort(key=lambda m: m.get("kickoff_utc") or "")
+                return self._send(200, {"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"filter":match_filter,"count":len(matches),"retrieved_at_utc":stamp,"matches":matches,"auth_required":False})
             except urllib.error.HTTPError as e:
                 return self._send(e.code, {"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
             except Exception as e:
                 return self._send(502, {"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/table":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4:
+                return self._send(400, {"error":"invalid_league_or_season"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getbltable/"+league+"/"+season,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(payload) if isinstance(payload,list) else None,"table":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/next-match":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            if not league.replace("_","").isalnum(): return self._send(400,{"error":"invalid_league"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getnextmatchbyleagueshortcut/"+league,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"match":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/teams":
+            league=(query.get("league",["bl1"])[0] or "bl1").strip()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4: return self._send(400,{"error":"invalid_league_or_season"})
+            try:
+                payload, headers=fetch_json("https://api.openligadb.de/getavailableteams/"+league+"/"+season,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                return self._send(200,{"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(payload) if isinstance(payload,list) else None,"teams":payload,"retrieved_at_utc":datetime.now(timezone.utc).isoformat()})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+
         if path == "/api-check":
             raw = "<!doctype html><html lang='de'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>WBR API-Prüfung</title><style>body{font:16px system-ui;background:#08111f;color:#eef;padding:20px;max-width:850px;margin:auto}section{background:#132238;border:1px solid #29405e;border-radius:12px;padding:16px;margin:14px 0}button{padding:12px 18px;background:#27d4c5;border:0;border-radius:8px;font-weight:bold}pre{white-space:pre-wrap;overflow-wrap:anywhere}.ok{color:#a7e66f}.bad{color:#ff8585}</style><h1>WBR · API-Prüfung</h1><p>Diese Seite läuft direkt auf demselben Backend. Kein Cross-Origin-Aufruf von GitHub Pages.</p><section><button onclick='run()'>Jetzt prüfen</button><p id='health'>Warte auf Prüfung.</p></section><section><h2>Provider-Status</h2><pre id='out'>Noch keine Daten.</pre></section><script>async function run(){let h=document.getElementById('health'),o=document.getElementById('out');h.textContent='Prüfe Health …';o.textContent='Lade Provider …';try{let a=await fetch('/health',{cache:'no-store'});let at=await a.text();if(!a.ok)throw Error('Health HTTP '+a.status+': '+at);h.innerHTML='<span class=ok>Backend erreichbar · HTTP '+a.status+'</span>';let b=await fetch('/api/v1/providers',{cache:'no-store'});let bt=await b.text();if(!b.ok)throw Error('Provider HTTP '+b.status+': '+bt);let d=JSON.parse(bt);o.textContent=JSON.stringify(d,null,2)}catch(e){h.innerHTML='<span class=bad>Fehler: '+e.message+'</span>';o.textContent='Provider-Prüfung fehlgeschlagen.'}}run();</script></html>".encode("utf-8")
             self.send_response(200)

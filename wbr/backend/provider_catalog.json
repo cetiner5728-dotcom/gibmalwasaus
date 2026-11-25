@@ -1,0 +1,228 @@
+{
+  "schema_version": "1.0",
+  "generated_for": "WBR 2026-27",
+  "note": "Registry only. Never expose credentials or claim integrations are live based on this list.",
+  "providers": [
+    {
+      "name": "GOAL API",
+      "secret_env": "GOAL_API_KEY",
+      "scope": "fixtures_live_odds",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "API-Football",
+      "secret_env": "APIFOOTBALL_API_KEY",
+      "scope": "fixtures_live_stats",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "SportAPI.ai",
+      "secret_env": "SPORTAPI_API_KEY",
+      "scope": "fixtures",
+      "integration_status": "adapter_present_unverified",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "MoviOdds",
+      "secret_env": "MOVIODDS_API_KEY",
+      "scope": "odds",
+      "integration_status": "adapter_present_unverified",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "SportScore",
+      "secret_env": "SPORTSCORE_API_KEY",
+      "scope": "scores_events",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "football-data.org",
+      "secret_env": "FOOTBALL_DATA_ORG_API_KEY",
+      "scope": "fixtures_scores",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "OpenLigaDB",
+      "secret_env": null,
+      "scope": "fixtures_scores",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "Open-Matchday",
+      "secret_env": null,
+      "scope": "research_csv",
+      "integration_status": "importer_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "Football-Data.co.uk",
+      "secret_env": null,
+      "scope": "research_csv_odds",
+      "integration_status": "importer_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "Football Charts API",
+      "secret_env": "FOOTBALL_CHARTS_API_KEY",
+      "scope": "research_stats",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "PropLine",
+      "secret_env": "PROPLINE_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "OddsPapi",
+      "secret_env": "ODDSPAPI_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "The Odds API",
+      "secret_env": "THE_ODDS_API_KEY",
+      "scope": "odds",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "PinnWire",
+      "secret_env": "PINNWIRE_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "PinnRadar",
+      "secret_env": "PINNRADAR_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "OpenFoot API",
+      "secret_env": "OPENFOOT_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "KickoffAPI",
+      "secret_env": "KICKOFF_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "Sportmonks",
+      "secret_env": "SPORTMONKS_API_TOKEN",
+      "scope": "fixtures_stats",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "ASA",
+      "secret_env": "ASA_API_KEY",
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "Open-Matchday local importer",
+      "secret_env": null,
+      "scope": "importer",
+      "integration_status": "adapter_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "SportScore alternative",
+      "secret_env": null,
+      "scope": "candidate",
+      "integration_status": "verify_docs",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null
+    },
+    {
+      "name": "PuntersEdge",
+      "secret_env": "PUNTERSEDGE_API_KEY",
+      "scope": "sports_prematch_odds_best_prices_sports_catalogue_au_racing",
+      "integration_status": "adapter_present_catalogue_test_only",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "Sports odds are pre-match only; not an in-play feed. Sports catalogue sync implemented; odds sync must be explicitly selected per sport/market to control credits."
+    }
+  ]
+}

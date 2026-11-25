@@ -41,7 +41,11 @@ def provider_status():
         env = p.get("secret_env")
         configured = bool(os.environ.get(env, "")) if env else None
         status = "PENDING_IMPLEMENTATION"
-        if p["name"] in ("SportScore","SportsEvents24") and p["integration_status"] == "adapter_present_unverified":
+        if p["integration_status"] == "verified":
+            status = "VERIFIED"
+        elif p["integration_status"] == "adapter_present" and not env:
+            status = "READY_NO_KEY"
+        elif p["name"] in ("SportScore","SportsEvents24") and p["integration_status"] == "adapter_present_unverified":
             status = "READY_TO_TEST_NO_KEY" if not env else ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET")
         elif p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
             status = ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET") if p["integration_status"] == "adapter_present_unverified" else ("CATALOGUE_TEST_READY" if configured else "MISSING_SERVER_SECRET")

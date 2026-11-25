@@ -29,15 +29,18 @@ def fetch_json(url, headers):
         return json.loads(body.decode("utf-8")), dict(response.headers)
 
 def provider_status():
-    return {
-      "providers": [
-        {"provider":"SportAPI.ai","configured":bool(SPORTAPI_KEY),"auth_header":"X-Api-Key","coverage":"Football and basketball","status":"READY_TO_TEST" if SPORTAPI_KEY else "MISSING_SERVER_SECRET"},
-        {"provider":"MoviOdds","configured":bool(MOVIODDS_KEY),"auth_header":"X-API-Key","coverage":"bet365 odds feed","status":"READY_TO_TEST" if MOVIODDS_KEY else "MISSING_SERVER_SECRET"}
-      ],
-      "sync_protected":bool(SYNC_TOKEN),
-      "storage":"ephemeral_render_filesystem",
-      "note":"Render Free storage is not persistent; export or add durable storage before relying on retained snapshots."
-    }
+    catalog = json.loads((Path(__file__).parent / "provider_catalog.json").read_text(encoding="utf-8"))
+    items = []
+    for p in catalog["providers"]:
+        env = p.get("secret_env")
+        configured = bool(os.environ.get(env, "")) if env else None
+        status = "PENDING_IMPLEMENTATION"
+        if p["integration_status"] == "adapter_present_unverified":
+            status = "READY_TO_TEST" if configured else "MISSING_SERVER_SECRET"
+        elif p["integration_status"] == "verify_docs":
+            status = "DOCUMENTATION_REVIEW_REQUIRED"
+        items.append({"provider":p["name"],"configured":configured,"scope":p["scope"],"integration_status":p["integration_status"],"status":status})
+    return {"providers":items,"sync_protected":bool(SYNC_TOKEN),"storage":"ephemeral_render_filesystem","note":"Registration does not imply a working API adapter. Render Free data files are not persistent."}
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, status, payload):

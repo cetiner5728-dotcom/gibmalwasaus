@@ -36,8 +36,8 @@ def provider_status():
         env = p.get("secret_env")
         configured = bool(os.environ.get(env, "")) if env else None
         status = "PENDING_IMPLEMENTATION"
-        if p["integration_status"] == "adapter_present_unverified":
-            status = "READY_TO_TEST" if configured else "MISSING_SERVER_SECRET"
+        if p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
+            status = ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET") if p["integration_status"] == "adapter_present_unverified" else ("CATALOGUE_TEST_READY" if configured else "MISSING_SERVER_SECRET")
         elif p["integration_status"] == "verify_docs":
             status = "DOCUMENTATION_REVIEW_REQUIRED"
         items.append({"provider":p["name"],"configured":configured,"scope":p["scope"],"integration_status":p["integration_status"],"status":status})

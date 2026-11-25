@@ -215,17 +215,31 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(raw,list):
                     return self._send(502,{"provider":"StatsHawk","status":"UNEXPECTED_RESPONSE","message":"Expected data.items array"})
                 stamp=datetime.now(timezone.utc).isoformat()
+                # Resolve team IDs from the season roster (one extra API call, not one call per match).
+                team_names={}
+                try:
+                    team_payload,team_headers=fetch_json("https://api.statshawk.ai/v1/competitions/"+competition+"/editions/"+season+"/teams",{"X-API-Key":STATSHAWK_KEY,"Accept":"application/json"})
+                    team_data=team_payload.get("data",{}) if isinstance(team_payload,dict) else {}
+                    for team in team_data.get("items",[]) if isinstance(team_data,dict) else []:
+                        if isinstance(team,dict) and team.get("id") and team.get("name"):
+                            team_names[team["id"]]=team["name"]
+                except Exception:
+                    team_headers={}
                 contests=[]
                 for x in raw:
                     if not isinstance(x,dict): continue
                     score=x.get("score") if isinstance(x.get("score"),dict) else {}
+                    home_id=x.get("home_team") or x.get("homeTeam") or x.get("home")
+                    away_id=x.get("away_team") or x.get("awayTeam") or x.get("away")
+                    home_name=x.get("home_team_name") or x.get("home_name") or team_names.get(home_id)
+                    away_name=x.get("away_team_name") or x.get("away_name") or team_names.get(away_id)
                     contests.append({
                         "id":x.get("id"),"provider_match_id":x.get("id"),
                         "competition_id":x.get("competition"),"edition_id":x.get("edition"),
                         "sport":x.get("sport"),"competition":competition,
                         "kickoff_utc":x.get("kickoff") or x.get("starts_at"),
-                        "homeTeam":x.get("home_team_name") or x.get("home_name"),
-                        "awayTeam":x.get("away_team_name") or x.get("away_name"),
+                        "home_team_id":home_id,"away_team_id":away_id,
+                        "homeTeam":home_name,"awayTeam":away_name,
                         "home_score":score.get("home"),"away_score":score.get("away"),
                         "score":str(score.get("home"))+":"+str(score.get("away")) if score.get("home") is not None and score.get("away") is not None else None,
                         "status":x.get("status"),"source":"StatsHawk","retrieved_at_utc":stamp

@@ -53,7 +53,7 @@
       "quota_remaining": null,
       "last_success": null,
       "last_error": null,
-      "notes": "Public REST fixtures adapter implemented for date/live modes and football/basketball/cricket/tennis. No key required for anonymous access; optional SPORTSCORE_API_KEY may be used. Attribution required; verify actual response and permitted deployment use."
+      "notes": "Documented public REST adapter for live/recent fixtures across football, basketball, cricket and tennis. No API key required for attribution tier; visible dofollow SportScore attribution required. Direct WBR live endpoint added; not yet verified against deployed backend."
     },
     {
       "name": "football-data.org",
@@ -69,11 +69,12 @@
       "name": "OpenLigaDB",
       "secret_env": null,
       "scope": "fixtures_scores",
-      "integration_status": "adapter_pending",
+      "integration_status": "adapter_present_unverified",
       "enabled": false,
       "quota_remaining": null,
       "last_success": null,
-      "last_error": null
+      "last_error": null,
+      "notes": "Public REST adapter added: available leagues by season and normalized match data by league shortcut/season. No API key required. Default season 2026 (2026/27); respect 60 requests/minute/IP and poll last-change endpoint."
     },
     {
       "name": "Open-Matchday",

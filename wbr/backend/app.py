@@ -82,6 +82,39 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/")
+        if path == "/api/v1/puntersedge/odds":
+            if not PUNTERSEDGE_KEY: return self._send(503, {"error":"provider_not_configured"})
+            if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled"})
+            if self.headers.get("X-WBR-Sync-Token","") != SYNC_TOKEN: return self._send(401, {"error":"unauthorized"})
+            try:
+                length = min(int(self.headers.get("Content-Length","0")), 4096)
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                return self._send(400, {"error":"invalid_json"})
+            sport_key = str(body.get("sport_key","")).strip().lower()
+            import re
+            if not re.fullmatch(r"[a-z0-9_]{2,40}", sport_key):
+                return self._send(400, {"error":"invalid_sport_key"})
+            raw_markets = body.get("markets", ["h2h"])
+            if isinstance(raw_markets, str): markets = [x.strip().lower() for x in raw_markets.split(",") if x.strip()]
+            elif isinstance(raw_markets, list): markets = [str(x).strip().lower() for x in raw_markets]
+            else: markets = []
+            allowed = {"h2h","spreads","totals"}
+            if not markets or len(set(markets)) != len(markets) or any(x not in allowed for x in markets):
+                return self._send(400, {"error":"invalid_markets","allowed":sorted(allowed)})
+            from urllib.parse import urlencode
+            query = urlencode({"markets":",".join(markets)})
+            url = "https://api.puntersedge.online/v1/sports/" + sport_key + "/odds?" + query
+            try:
+                payload, headers = fetch_json(url, {"X-API-Key":PUNTERSEDGE_KEY,"Accept":"application/json"})
+                stamp = datetime.now(timezone.utc).isoformat()
+                events = payload if isinstance(payload,list) else []
+                write_json("puntersedge_odds_" + sport_key + ".json", {"retrieved_at_utc":stamp,"sport_key":sport_key,"markets":markets,"events":payload})
+                return self._send(200, {"provider":"PuntersEdge","status":"OK","sport_key":sport_key,"markets":markets,"event_count":len(events),"credits_cost":headers.get("X-Credits-Cost"),"credits_used":headers.get("X-Credits-Used"),"credits_remaining":headers.get("X-Credits-Remaining"),"data":payload})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"PuntersEdge","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"PuntersEdge","status":"ERROR","message":str(e)[:300]})
         if path != "/api/v1/sync": return self._send(404, {"error":"not_found","path":path})
         if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled","message":"Set WBR_SYNC_TOKEN in Render first."})
         if self.headers.get("X-WBR-Sync-Token","") != SYNC_TOKEN:

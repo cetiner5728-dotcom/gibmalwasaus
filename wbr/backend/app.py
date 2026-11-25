@@ -172,12 +172,32 @@ class Handler(BaseHTTPRequestHandler):
                     sources.append({"provider":"Sportmonks","status":"ERROR","message":str(e)[:200]})
             else:
                 sources.append({"provider":"Sportmonks","status":"MISSING_SERVER_SECRET","required_env":"SPORTMONKS_API_TOKEN"})
-            # Keep provider-specific identities; only deduplicate identical provider+slug pairs.
+            # Canonicalize same competition across providers; preserve every provider identity.
+            import re, unicodedata
             unique={}
             for x in catalog:
-                key=(x.get("provider"),str(x.get("slug") or x.get("provider_id")))
-                unique[key]=x
+                raw_name=str(x.get("name") or x.get("slug") or x.get("provider_id") or "")
+                norm=unicodedata.normalize("NFKD",raw_name).encode("ascii","ignore").decode().lower()
+                norm=re.sub(r"[^a-z0-9]+","",norm)
+                country=str(x.get("country") or "").strip().lower()
+                sport=str(x.get("sport") or "").strip().lower()
+                comp_season=str(x.get("season") or season)
+                key=(norm,country,sport,comp_season) if norm else (x.get("provider"),str(x.get("provider_id")))
+                if key not in unique:
+                    unique[key]={**x,"providers":[x.get("provider")],"provider_ids":{x.get("provider"):x.get("provider_id")},"provider_slugs":{x.get("provider"):x.get("slug")}}
+                else:
+                    item=unique[key]
+                    provider=x.get("provider")
+                    if provider not in item["providers"]: item["providers"].append(provider)
+                    item["provider_ids"][provider]=x.get("provider_id")
+                    item["provider_slugs"][provider]=x.get("slug")
+                    if provider=="StatsHawk" and x.get("slug"): item["statshawk_slug"]=x.get("slug")
+                    if not item.get("country") and x.get("country"): item["country"]=x.get("country")
+                    if not item.get("logo") and x.get("logo"): item["logo"]=x.get("logo")
             items=list(unique.values())
+            for item in items:
+                if "StatsHawk" in item.get("providers",[]) and item.get("provider")!="StatsHawk":
+                    item["statshawk_slug"]=item.get("provider_slugs",{}).get("StatsHawk")
             return self._send(200,{"status":"OK","season":season,"count":len(items),"competitions":items,"sources":sources,"retrieved_at_utc":stamp,"note":"Catalogue coverage is limited to competitions listed by the responding providers; absence does not mean a league does not exist. Availability of fixtures/stats is a separate check."})
         if path == "/api/v1/statshawk/contests":
             competition=(query.get("competition",[""])[0] or "").strip().lower()

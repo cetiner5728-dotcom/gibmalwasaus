@@ -212,6 +212,17 @@
       "quota_remaining": null,
       "last_success": null,
       "last_error": null
+    },
+    {
+      "name": "PuntersEdge",
+      "secret_env": "PUNTERSEDGE_API_KEY",
+      "scope": "sports_prematch_odds_best_prices_sports_catalogue_au_racing",
+      "integration_status": "adapter_present_catalogue_test_only",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "Sports odds are pre-match only; not an in-play feed. Sports catalogue sync implemented; odds sync must be explicitly selected per sport/market to control credits."
     }
   ]
 }

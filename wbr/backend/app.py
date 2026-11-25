@@ -74,6 +74,50 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
+        if path == "/api/v1/openfootball/matches":
+            league=(query.get("league",["de.1"])[0] or "de.1").strip().lower()
+            season=(query.get("season",["2026-27"])[0] or "2026-27").strip()
+            import re
+            if not re.fullmatch(r"[a-z]{2}\\.[0-9]{1,2}",league) or season not in ("2026-27","2026"):
+                return self._send(400,{"provider":"OpenFootball","status":"INVALID_PARAMETERS","allowed_seasons":["2026-27","2026"]})
+            try:
+                payload,headers=fetch_json("https://raw.githubusercontent.com/openfootball/football.json/master/"+season+"/"+league+".json",{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                raw=payload.get("matches",[]) if isinstance(payload,dict) else []
+                if not isinstance(raw,list): return self._send(502,{"provider":"OpenFootball","status":"UNEXPECTED_RESPONSE"})
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for x in raw:
+                    if not isinstance(x,dict): continue
+                    score=x.get("score") if isinstance(x.get("score"),dict) else {}
+                    ft=score.get("ft") if isinstance(score,dict) else None
+                    ht=score.get("ht") if isinstance(score,dict) else None
+                    kickoff=(x.get("date") or "")+("T"+x.get("time") if x.get("time") else "")
+                    matches.append({"provider_match_id":None,"sport":"Football","competition_name":payload.get("name"),"season":season,"round":x.get("round"),"kickoff_local":kickoff or None,"homeTeam":x.get("team1"),"awayTeam":x.get("team2"),"home_score":ft[0] if isinstance(ft,list) and len(ft)>1 else None,"away_score":ft[1] if isinstance(ft,list) and len(ft)>1 else None,"halftime_score":str(ht[0])+":"+str(ht[1]) if isinstance(ht,list) and len(ht)>1 else None,"status":"finished" if isinstance(ft,list) and len(ft)>1 else "scheduled","source":"OpenFootball","retrieved_at_utc":stamp})
+                return self._send(200,{"provider":"OpenFootball","status":"OK","league":league,"season":season,"competition":payload.get("name"),"count":len(matches),"matches":matches,"license":"CC0-1.0","retrieved_at_utc":stamp,"note":"Public-domain fixture/results data; no live scores, odds, lineups or injuries. Match IDs are not supplied by this dataset."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"OpenFootball","status":"HTTP_ERROR","http_status":e.code,"message":e.read(400).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"OpenFootball","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/sporting-events/matches":
+            dataset=(query.get("dataset",["football"])[0] or "football").strip().lower()
+            allowed={"football","basketball","nba","ice-hockey","nhl-ice-hockey","american-football","college-football","nfl","mlb","baseball","premier-league","la-liga","serie-a","bundesliga","ligue-1","nations-league","champions-league","europa-league","fifa-world-cup","tennis","golf","mma","rugby-union","motorsport","winter-sports","cricket","formula-1","athletics","cycling","nascar","six-nations","darts","snooker","boxing","motogp","fa-cup","esports","march-madness","the-ashes","wrc","conference-league","indycar","ipl","pdc-world-championship","wimbledon","le-mans","swimming","rugby-league","super-bowl","cheltenham-festival","grand-national","vuelta-a-espana","tour-de-france","australian-open","the-masters","world-athletics-championships","premier-league-darts"}
+            if dataset not in allowed: return self._send(400,{"provider":"Sporting Events","status":"INVALID_DATASET","allowed":sorted(allowed)})
+            try:
+                payload,headers=fetch_json("https://sporting-events.org/data/"+dataset+".json",{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                raw=payload.get("events",payload.get("matches",payload.get("data",[]))) if isinstance(payload,dict) else payload
+                if not isinstance(raw,list): return self._send(502,{"provider":"Sporting Events","status":"UNEXPECTED_RESPONSE","message":"Expected events array"})
+                stamp=datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for x in raw:
+                    if not isinstance(x,dict): continue
+                    home=x.get("home_team") or x.get("homeTeam")
+                    away=x.get("away_team") or x.get("awayTeam")
+                    matches.append({"provider_match_id":x.get("match") or x.get("id"),"sport":dataset,"competition_name":x.get("competition") or x.get("league") or dataset,"kickoff_utc":(x.get("date_utc") or "")+("T"+x.get("time_utc")+"Z" if x.get("time_utc") else "Z") if x.get("date_utc") else None,"homeTeam":home,"awayTeam":away,"fixture":x.get("fixture"),"city":x.get("city"),"country":x.get("country"),"status":x.get("status"),"event_url":x.get("url"),"source":"Sporting Events","retrieved_at_utc":stamp})
+                return self._send(200,{"provider":"Sporting Events","status":"OK","dataset":dataset,"count":len(matches),"matches":matches,"license":"Free personal and commercial use with attribution","attribution_url":"https://sporting-events.org/data/","retrieved_at_utc":stamp,"note":"Fixture/context dataset; not a live-score or odds feed. Blank team fields are retained as null."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"Sporting Events","status":"HTTP_ERROR","http_status":e.code,"message":e.read(400).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"Sporting Events","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/sportsevents24/events":
             # Public multi-sport fixtures source. One country + sport (or one tournament) per request.
             from urllib.parse import urlencode

@@ -12,6 +12,7 @@ MOVIODDS_KEY = os.environ.get("MOVIODDS_API_KEY", "")
 PUNTERSEDGE_KEY = os.environ.get("PUNTERSEDGE_API_KEY", "")
 APIFOOTBALL_KEY = os.environ.get("APIFOOTBALL_API_KEY", "")
 SPORTSCORE_KEY = os.environ.get("SPORTSCORE_API_KEY", "")
+STATSHAWK_KEY = os.environ.get("STATSHAWK_API_KEY", "")
 SYNC_TOKEN = os.environ.get("WBR_SYNC_TOKEN", "")
 
 def read_json(name, default):
@@ -71,6 +72,51 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
+        if path == "/api/v1/leagues/catalog":
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not season.isdigit() or len(season)!=4:
+                return self._send(400,{"error":"invalid_season"})
+            stamp=datetime.now(timezone.utc).isoformat()
+            catalog=[]
+            sources=[]
+            # OpenLigaDB: public football league catalogue for the requested calendar season.
+            try:
+                leagues, _=fetch_json("https://api.openligadb.de/getavailableleagues/"+season,{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                if isinstance(leagues,list):
+                    for x in leagues:
+                        if isinstance(x,dict):
+                            catalog.append({"provider":"OpenLigaDB","provider_id":x.get("leagueId"),"name":x.get("leagueName"),"slug":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"sport":(x.get("sport") or {}).get("sportName","Football"),"country":None,"coverage":"catalogue_listed"})
+                    sources.append({"provider":"OpenLigaDB","status":"OK","count":len(leagues)})
+                else: sources.append({"provider":"OpenLigaDB","status":"UNEXPECTED_RESPONSE"})
+            except urllib.error.HTTPError as e:
+                sources.append({"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code})
+            except Exception as e:
+                sources.append({"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:200]})
+            # StatsHawk: cross-sport global competition index; requires a server-side key.
+            if STATSHAWK_KEY:
+                try:
+                    payload, headers=fetch_json("https://api.statshawk.ai/v1/competitions?page=0&per_page=1000",{"X-API-Key":STATSHAWK_KEY,"Accept":"application/json"})
+                    data=payload.get("data",{}) if isinstance(payload,dict) else {}
+                    items=data.get("items",[]) if isinstance(data,dict) else []
+                    if isinstance(items,list):
+                        for x in items:
+                            if isinstance(x,dict):
+                                catalog.append({"provider":"StatsHawk","provider_id":x.get("id"),"name":x.get("name"),"slug":x.get("slug"),"season":season,"sport":x.get("sport"),"kind":x.get("kind"),"country":None,"coverage":"catalogue_listed"})
+                        sources.append({"provider":"StatsHawk","status":"OK","count":len(items),"total":data.get("total"),"page":data.get("page"),"per_page":data.get("per_page"),"quota_remaining":headers.get("X-RateLimit-Remaining")})
+                    else: sources.append({"provider":"StatsHawk","status":"UNEXPECTED_RESPONSE"})
+                except urllib.error.HTTPError as e:
+                    sources.append({"provider":"StatsHawk","status":"HTTP_ERROR","http_status":e.code,"message":e.read(300).decode("utf-8","replace")})
+                except Exception as e:
+                    sources.append({"provider":"StatsHawk","status":"ERROR","message":str(e)[:200]})
+            else:
+                sources.append({"provider":"StatsHawk","status":"MISSING_SERVER_SECRET","required_env":"STATSHAWK_API_KEY"})
+            # Keep provider-specific identities; only deduplicate identical provider+slug pairs.
+            unique={}
+            for x in catalog:
+                key=(x.get("provider"),str(x.get("slug") or x.get("provider_id")))
+                unique[key]=x
+            items=list(unique.values())
+            return self._send(200,{"status":"OK","season":season,"count":len(items),"competitions":items,"sources":sources,"retrieved_at_utc":stamp,"note":"Catalogue coverage is limited to competitions listed by the responding providers; absence does not mean a league does not exist. Availability of fixtures/stats is a separate check."})
         if path == "/api/v1/sportscore/live":
             sport = (query.get("sport", ["football"])[0] or "football").lower()
             if sport not in ("football", "basketball", "cricket", "tennis"):

@@ -132,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
             league=(query.get("league",["de.1"])[0] or "de.1").strip().lower()
             season=(query.get("season",["2026-27"])[0] or "2026-27").strip()
             import re
-            if not re.fullmatch(r"[a-z]{2}\\.[0-9]{1,2}",league) or season not in ("2026-27","2026"):
+            if not re.fullmatch(r"[a-z]{2}\.[0-9]{1,2}",league) or season not in ("2026-27","2026"):
                 return self._send(400,{"provider":"OpenFootball","status":"INVALID_PARAMETERS","allowed_seasons":["2026-27","2026"]})
             try:
                 payload,headers=fetch_json("https://raw.githubusercontent.com/openfootball/football.json/master/"+season+"/"+league+".json",{"Accept":"application/json","User-Agent":"WBR/1.0"})

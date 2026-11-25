@@ -9,6 +9,7 @@ from urllib.parse import urlparse, parse_qs
 DATA = Path(os.environ.get("WBR_DATA_DIR", "data"))
 SPORTAPI_KEY = os.environ.get("SPORTAPI_API_KEY", "")
 MOVIODDS_KEY = os.environ.get("MOVIODDS_API_KEY", "")
+PUNTERSEDGE_KEY = os.environ.get("PUNTERSEDGE_API_KEY", "")
 SYNC_TOKEN = os.environ.get("WBR_SYNC_TOKEN", "")
 
 def read_json(name, default):
@@ -114,6 +115,19 @@ class Handler(BaseHTTPRequestHandler):
                     result["providers"].append({"provider":"SportAPI.ai","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
                 except Exception as e:
                     result["providers"].append({"provider":"SportAPI.ai","status":"ERROR","message":str(e)[:300]})
+        if body.get("puntersedge", True):
+            if not PUNTERSEDGE_KEY:
+                result["providers"].append({"provider":"PuntersEdge","status":"MISSING_SERVER_SECRET"})
+            else:
+                try:
+                    payload, headers = fetch_json("https://api.puntersedge.online/v1/sports", {"X-API-Key":PUNTERSEDGE_KEY,"Accept":"application/json"})
+                    if not isinstance(payload,list): raise ValueError("Unexpected sports catalogue response")
+                    write_json("puntersedge_sports.json",{"retrieved_at_utc":result["retrieved_at_utc"],"sports":payload})
+                    result["providers"].append({"provider":"PuntersEdge","status":"OK","sports_count":len(payload),"credits_remaining":headers.get("X-Credits-Remaining"),"credits_used":headers.get("X-Credits-Used"),"note":"Catalogue only; no odds markets requested, no credits spent beyond catalogue endpoint."})
+                except urllib.error.HTTPError as e:
+                    result["providers"].append({"provider":"PuntersEdge","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+                except Exception as e:
+                    result["providers"].append({"provider":"PuntersEdge","status":"ERROR","message":str(e)[:300]})
         if body.get("moviodds", True):
             if not MOVIODDS_KEY:
                 result["providers"].append({"provider":"MoviOdds","status":"MISSING_SERVER_SECRET"})

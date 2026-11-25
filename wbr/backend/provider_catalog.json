@@ -79,12 +79,13 @@
     {
       "name": "Open-Matchday",
       "secret_env": null,
-      "scope": "research_csv",
-      "integration_status": "importer_pending",
+      "scope": "football_fixtures_results_statistics_csv",
+      "integration_status": "rights_review_required",
       "enabled": false,
       "quota_remaining": null,
       "last_success": null,
-      "last_error": null
+      "last_error": null,
+      "notes": "75 competitions, daily CSV. Non-commercial only; not enabled for WBR until project usage is confirmed compatible. Upstream provider rights also apply."
     },
     {
       "name": "Football-Data.co.uk",
@@ -248,6 +249,50 @@
       "last_success": null,
       "last_error": null,
       "notes": "Publicly reachable undocumented JSON endpoints exist, but there is no supported public developer API. Automated extraction/use is restricted by applicable ESPN/Disney terms. Do not activate automated ingestion or redistribute data until written permission/licensing is confirmed. No API key required for public endpoints."
+    },
+    {
+      "name": "OpenFootball",
+      "secret_env": null,
+      "scope": "football_fixtures_results_2026_27",
+      "integration_status": "adapter_present_unverified",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "No-key JSON importer implemented for 2026/27 and 2026. CC0-1.0 dataset. Fixtures/results only; no live scores, odds, lineups or injuries."
+    },
+    {
+      "name": "Sporting Events",
+      "secret_env": null,
+      "scope": "multi_sport_fixtures_context",
+      "integration_status": "adapter_present_unverified",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "No-key CSV/JSON datasets, free personal and commercial use with attribution. Importer implemented for whitelisted datasets; fixture/context only, not live scores or odds."
+    },
+    {
+      "name": "Fixture Download",
+      "secret_env": null,
+      "scope": "multi_league_fixtures_results_json_csv",
+      "integration_status": "importer_pending",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "Public fixture downloads as JSON/CSV/XLSX/ICS. Importer not yet implemented; exact competition slugs and terms must be checked before automated ingestion."
+    },
+    {
+      "name": "LivePlayScore",
+      "secret_env": null,
+      "scope": "multi_sport_live_scores",
+      "integration_status": "rights_review_required",
+      "enabled": false,
+      "quota_remaining": null,
+      "last_success": null,
+      "last_error": null,
+      "notes": "Public website claims live scores, but no documented open feed/API confirmed. No scraping or automated ingestion until permission and stable data access are verified."
     }
   ]
 }

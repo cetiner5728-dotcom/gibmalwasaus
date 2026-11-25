@@ -101,9 +101,12 @@ class Handler(BaseHTTPRequestHandler):
             if in_play not in ("","0","1"):
                 return self._send(400,{"provider":"MoviOdds","status":"INVALID_IN_PLAY","allowed":["0","1"]})
             from urllib.parse import urlencode
+            # Soccer full-time result is group 40 pre-match and group 1777 in-play.
+            if sport == "soccer" and in_play == "1" and groups == "40":
+                groups = "1777"
             params={"sport":sport}
             if groups: params["groups"]=groups
-            if in_play: params["in_play"]=in_play
+            if in_play == "1": params["in_play"]="1"
             endpoint="https://moviodds.com/odds?"+urlencode(params)
             try:
                 payload,headers=fetch_json(endpoint,{"X-API-Key":MOVIODDS_KEY,"Accept":"application/json","User-Agent":"WBR/1.0"})
@@ -114,6 +117,8 @@ class Handler(BaseHTTPRequestHandler):
                 matches=[]
                 for item in raw_matches:
                     if not isinstance(item,dict): continue
+                    if in_play == "1" and not bool(item.get("in_play",False)): continue
+                    if in_play == "0" and bool(item.get("in_play",False)): continue
                     quotes=item.get("quotes") if isinstance(item.get("quotes"),list) else []
                     clean_quotes=[]
                     for q in quotes:

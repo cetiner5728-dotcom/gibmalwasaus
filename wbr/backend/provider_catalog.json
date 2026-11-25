@@ -254,7 +254,7 @@
       "name": "OpenFootball",
       "secret_env": null,
       "scope": "football_fixtures_results_2026_27",
-      "integration_status": "adapter_present",
+      "integration_status": "verified",
       "enabled": true,
       "quota_remaining": null,
       "last_success": null,

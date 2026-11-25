@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: wbr-backend
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: wbr/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /health
+    autoDeploy: true

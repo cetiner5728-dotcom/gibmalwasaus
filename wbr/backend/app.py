@@ -137,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         dt=datetime.fromisoformat(kickoff.replace("Z","+00:00")) if kickoff else None
                     except Exception: dt=None
-                    status="finished" if finished else ("live" if dt and dt <= now else "scheduled")
+                    status="finished" if finished else "scheduled"  # OpenLigaDB does not expose reliable in-play state; never infer live from kickoff time.
                     if match_filter=="upcoming" and (finished or not dt or dt<=now): continue
                     if match_filter=="finished" and not finished: continue
                     matches.append({"id":x.get("matchID"),"provider_match_id":x.get("matchID"),"sport":"Football","competition_name":x.get("leagueName"),"league_shortcut":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"round":(x.get("group") or {}).get("groupName"),"kickoff_utc":kickoff,"homeTeam":t1.get("teamName"),"awayTeam":t2.get("teamName"),"home_team_id":t1.get("teamId"),"away_team_id":t2.get("teamId"),"home_logo":t1.get("teamIconUrl"),"away_logo":t2.get("teamIconUrl"),"score":str(ft.get("pointsTeam1"))+":"+str(ft.get("pointsTeam2")) if ft else None,"halftime_score":str(ht.get("pointsTeam1"))+":"+str(ht.get("pointsTeam2")) if ht else None,"status":status,"source":"OpenLigaDB","retrieved_at_utc":stamp})

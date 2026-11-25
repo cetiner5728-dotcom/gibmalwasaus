@@ -79,13 +79,13 @@
     {
       "name": "Open-Matchday",
       "secret_env": null,
-      "scope": "football_fixtures_results_statistics_csv",
-      "integration_status": "rights_review_required",
-      "enabled": false,
+      "scope": "football_2026_27_csv_results_fixtures_goals",
+      "integration_status": "adapter_present_unverified",
+      "enabled": true,
       "quota_remaining": null,
       "last_success": null,
       "last_error": null,
-      "notes": "75 competitions, daily CSV. Non-commercial only; not enabled for WBR until project usage is confirmed compatible. Upstream provider rights also apply."
+      "notes": "Importer implemented. 75 competitions, daily CSV snapshot. Non-commercial informational/personal use only; attribution required; provider rights remain separate. Never use as live feed."
     },
     {
       "name": "Football-Data.co.uk",
@@ -242,13 +242,13 @@
     {
       "name": "ESPN",
       "secret_env": null,
-      "scope": "sports_scores_fixtures_standings_team_player_stats",
-      "integration_status": "rights_review_required",
-      "enabled": false,
+      "scope": "experimental_scoreboard_football_basketball_nhl_nfl_mlb",
+      "integration_status": "adapter_present_unverified",
+      "enabled": true,
       "quota_remaining": null,
       "last_success": null,
       "last_error": null,
-      "notes": "Publicly reachable undocumented JSON endpoints exist, but there is no supported public developer API. Automated extraction/use is restricted by applicable ESPN/Disney terms. Do not activate automated ingestion or redistribute data until written permission/licensing is confirmed. No API key required for public endpoints."
+      "notes": "Experimental public undocumented ESPN site scoreboard endpoint. Importer implemented for whitelisted leagues. No odds. Endpoint/schema may change; verify ESPN terms before commercial reuse."
     },
     {
       "name": "OpenFootball",
@@ -286,13 +286,13 @@
     {
       "name": "LivePlayScore",
       "secret_env": null,
-      "scope": "multi_sport_live_scores",
-      "integration_status": "rights_review_required",
-      "enabled": false,
+      "scope": "external_live_scoreboard_reference",
+      "integration_status": "website_reference_only",
+      "enabled": true,
       "quota_remaining": null,
       "last_success": null,
       "last_error": null,
-      "notes": "Public website claims live scores, but no documented open feed/API confirmed. No scraping or automated ingestion until permission and stable data access are verified."
+      "notes": "Website linked as a manual live-score reference. No documented public API/export or redistribution permission confirmed; WBR does not scrape or ingest its scores."
     }
   ]
 }

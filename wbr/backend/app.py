@@ -41,7 +41,7 @@ def provider_status():
         env = p.get("secret_env")
         configured = bool(os.environ.get(env, "")) if env else None
         status = "PENDING_IMPLEMENTATION"
-        if p["name"] == "SportScore" and p["integration_status"] == "adapter_present_unverified":
+        if p["name"] in ("SportScore","SportsEvents24") and p["integration_status"] == "adapter_present_unverified":
             status = "READY_TO_TEST_NO_KEY" if not env else ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET")
         elif p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
             status = ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET") if p["integration_status"] == "adapter_present_unverified" else ("CATALOGUE_TEST_READY" if configured else "MISSING_SERVER_SECRET")
@@ -74,6 +74,79 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
+        if path == "/api/v1/sportsevents24/events":
+            # Public multi-sport fixtures source. One country + sport (or one tournament) per request.
+            from urllib.parse import urlencode
+            country=(query.get("country",[""])[0] or "").strip().upper()
+            sport_id=(query.get("sport_id",["1"])[0] or "1").strip()
+            tournament_id=(query.get("tournament_id",[""])[0] or "").strip()
+            limit=(query.get("limit",["100"])[0] or "100").strip()
+            cursor=(query.get("cursor",[""])[0] or "").strip()
+            if not tournament_id and (len(country)!=2 or not country.isalpha()):
+                return self._send(400,{"provider":"SportsEvents24","status":"INVALID_SCOPE","required":"country=2-letter ISO code and sport_id, or tournament_id"})
+            if not sport_id.isdigit() or not limit.isdigit() or int(limit)<1 or int(limit)>100:
+                return self._send(400,{"provider":"SportsEvents24","status":"INVALID_PARAMETERS","allowed_sport_ids":{"football":1,"basketball":2,"ice_hockey":3,"volleyball":4,"rugby":5,"handball":6,"floorball":7,"baseball":8,"american_football":9,"cricket":11,"field_hockey":13,"water_polo":14,"netball":20,"australian_rules":21,"lacrosse":22,"inline_hockey":25,"futsal":27,"softball":42,"bandy":66,"beach_soccer":68},"max_limit":100})
+            params={"sport_id":sport_id,"limit":limit}
+            if tournament_id: params["tournament_id"]=tournament_id
+            else: params["country"]=country
+            for key in ("from","to","updated_since"):
+                value=(query.get(key,[""])[0] or "").strip()
+                if value: params[key]=value
+            if cursor: params["cursor"]=cursor
+            try:
+                payload,headers=fetch_json("https://sportsevents24.com/api/v1/events?"+urlencode(params),{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                raw=payload.get("data",[]) if isinstance(payload,dict) else []
+                if not isinstance(raw,list):
+                    return self._send(502,{"provider":"SportsEvents24","status":"UNEXPECTED_RESPONSE"})
+                stamp=datetime.now(timezone.utc).isoformat()
+                sport_names={"1":"Football","2":"Basketball","3":"Ice Hockey","4":"Volleyball","5":"Rugby","6":"Handball","7":"Floorball","8":"Baseball","9":"American Football","11":"Cricket","13":"Field Hockey","14":"Water Polo","20":"Netball","21":"Australian Rules Football","22":"Lacrosse","25":"Inline Hockey","27":"Futsal","42":"Softball","66":"Bandy","68":"Beach Soccer"}
+                normalized=[]
+                for x in raw:
+                    if not isinstance(x,dict): continue
+                    result=x.get("result")
+                    normalized.append({
+                        "id":x.get("id"),"provider_match_id":x.get("id"),
+                        "sport":sport_names.get(str(x.get("sportId") or sport_id)),
+                        "sport_id":x.get("sportId") or int(sport_id),
+                        "competition_name":x.get("tournament"),
+                        "tournament_id":x.get("tournamentId"),
+                        "country":x.get("country"),
+                        "homeTeam":x.get("teamHome"),"awayTeam":x.get("teamAway"),
+                        "kickoff_utc":x.get("startsAt"),
+                        "local_kickoff":x.get("localStartsAt"),
+                        "timezone":x.get("timeZone"),
+                        "venue":x.get("location"),
+                        "score":result if result else None,
+                        "status":x.get("category"),
+                        "updated_at":x.get("updatedAt"),
+                        "source":"SportsEvents24","retrieved_at_utc":stamp
+                    })
+                existing=read_json("sportsevents24_matches.json",{"matches":[]})
+                old=existing.get("matches",[]) if isinstance(existing,dict) else []
+                by_id={str(m.get("provider_match_id")):m for m in old if isinstance(m,dict) and m.get("provider_match_id") is not None}
+                for m in normalized: by_id[str(m["provider_match_id"])]=m
+                saved=list(by_id.values())
+                write_json("sportsevents24_matches.json",{"provider":"SportsEvents24","retrieved_at_utc":stamp,"matches":saved})
+                usage=payload.get("usage",{}) if isinstance(payload,dict) else {}
+                return self._send(200,{"provider":"SportsEvents24","status":"OK","scope":{"country":country or None,"sport_id":int(sport_id),"tournament_id":int(tournament_id) if tournament_id.isdigit() else None},"count":len(normalized),"saved_total":len(saved),"events":normalized,"nextCursor":payload.get("nextCursor"),"usage":usage,"retrieved_at_utc":stamp,"note":"This source requires country+sport or tournament scope; this response is not a complete worldwide event census."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"SportsEvents24","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"SportsEvents24","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/sportsevents24/tournaments":
+            from urllib.parse import urlencode
+            country=(query.get("country",[""])[0] or "").strip().upper()
+            sport_id=(query.get("sport_id",["1"])[0] or "1").strip()
+            if len(country)!=2 or not country.isalpha() or not sport_id.isdigit():
+                return self._send(400,{"provider":"SportsEvents24","status":"INVALID_SCOPE","required":"country=2-letter ISO code and numeric sport_id"})
+            try:
+                payload,headers=fetch_json("https://sportsevents24.com/api/v1/tournaments?"+urlencode({"country":country,"sport_id":sport_id,"limit":100}),{"Accept":"application/json","User-Agent":"WBR/1.0"})
+                items=payload.get("data",[]) if isinstance(payload,dict) else []
+                return self._send(200,{"provider":"SportsEvents24","status":"OK","country":country,"sport_id":int(sport_id),"count":len(items) if isinstance(items,list) else None,"tournaments":items,"usage":payload.get("usage") if isinstance(payload,dict) else None})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"SportsEvents24","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"SportsEvents24","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/leagues/catalog":
             season=(query.get("season",["2026"])[0] or "2026").strip()
             if not season.isdigit() or len(season)!=4:

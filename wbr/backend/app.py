@@ -666,4 +666,7 @@ class Handler(BaseHTTPRequestHandler):
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT","10000"))), Handler).serve_forever()
+    port = int(os.environ.get("PORT", "10000"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    print("WBR backend listening on 0.0.0.0:%s" % port, flush=True)
+    server.serve_forever()

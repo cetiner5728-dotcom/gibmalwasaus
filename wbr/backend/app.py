@@ -117,6 +117,42 @@ class Handler(BaseHTTPRequestHandler):
                 unique[key]=x
             items=list(unique.values())
             return self._send(200,{"status":"OK","season":season,"count":len(items),"competitions":items,"sources":sources,"retrieved_at_utc":stamp,"note":"Catalogue coverage is limited to competitions listed by the responding providers; absence does not mean a league does not exist. Availability of fixtures/stats is a separate check."})
+        if path == "/api/v1/statshawk/contests":
+            competition=(query.get("competition",[""])[0] or "").strip().lower()
+            season=(query.get("season",["2026"])[0] or "2026").strip()
+            if not STATSHAWK_KEY:
+                return self._send(503,{"provider":"StatsHawk","status":"MISSING_SERVER_SECRET","required_env":"STATSHAWK_API_KEY"})
+            import re
+            if not re.fullmatch(r"[a-z0-9_-]{2,80}",competition) or not season.isdigit() or len(season)!=4:
+                return self._send(400,{"provider":"StatsHawk","status":"INVALID_COMPETITION_OR_SEASON","required":"competition slug and four-digit season"})
+            try:
+                endpoint="https://api.statshawk.ai/v1/competitions/"+competition+"/editions/"+season+"/contests"
+                payload,headers=fetch_json(endpoint,{"X-API-Key":STATSHAWK_KEY,"Accept":"application/json"})
+                data=payload.get("data",{}) if isinstance(payload,dict) else {}
+                raw=data.get("items",[]) if isinstance(data,dict) else []
+                if not isinstance(raw,list):
+                    return self._send(502,{"provider":"StatsHawk","status":"UNEXPECTED_RESPONSE","message":"Expected data.items array"})
+                stamp=datetime.now(timezone.utc).isoformat()
+                contests=[]
+                for x in raw:
+                    if not isinstance(x,dict): continue
+                    score=x.get("score") if isinstance(x.get("score"),dict) else {}
+                    contests.append({
+                        "id":x.get("id"),"provider_match_id":x.get("id"),
+                        "competition_id":x.get("competition"),"edition_id":x.get("edition"),
+                        "sport":x.get("sport"),"competition":competition,
+                        "kickoff_utc":x.get("kickoff") or x.get("starts_at"),
+                        "homeTeam":x.get("home_team_name") or x.get("home_name"),
+                        "awayTeam":x.get("away_team_name") or x.get("away_name"),
+                        "home_score":score.get("home"),"away_score":score.get("away"),
+                        "score":str(score.get("home"))+":"+str(score.get("away")) if score.get("home") is not None and score.get("away") is not None else None,
+                        "status":x.get("status"),"source":"StatsHawk","retrieved_at_utc":stamp
+                    })
+                return self._send(200,{"provider":"StatsHawk","status":"OK","competition":competition,"season":season,"count":len(contests),"total":data.get("total") if isinstance(data,dict) else None,"contests":contests,"quota_remaining":headers.get("X-RateLimit-Remaining"),"retrieved_at_utc":stamp,"note":"An empty list means this edition returned no contests; it does not prove the competition is unsupported."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code,{"provider":"StatsHawk","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502,{"provider":"StatsHawk","status":"ERROR","message":str(e)[:250]})
         if path == "/api/v1/sportscore/live":
             sport = (query.get("sport", ["football"])[0] or "football").lower()
             if sport not in ("football", "basketball", "cricket", "tennis"):

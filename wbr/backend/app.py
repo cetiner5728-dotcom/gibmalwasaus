@@ -11,6 +11,7 @@ SPORTAPI_KEY = os.environ.get("SPORTAPI_API_KEY", "")
 MOVIODDS_KEY = os.environ.get("MOVIODDS_API_KEY", "")
 PUNTERSEDGE_KEY = os.environ.get("PUNTERSEDGE_API_KEY", "")
 APIFOOTBALL_KEY = os.environ.get("APIFOOTBALL_API_KEY", "")
+SPORTSCORE_KEY = os.environ.get("SPORTSCORE_API_KEY", "")
 SYNC_TOKEN = os.environ.get("WBR_SYNC_TOKEN", "")
 
 def read_json(name, default):
@@ -37,7 +38,9 @@ def provider_status():
         env = p.get("secret_env")
         configured = bool(os.environ.get(env, "")) if env else None
         status = "PENDING_IMPLEMENTATION"
-        if p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
+        if p["name"] == "SportScore" and p["integration_status"] == "adapter_present_unverified":
+            status = "READY_TO_TEST_NO_KEY" if not env else ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET")
+        elif p["integration_status"] in ("adapter_present_unverified", "adapter_present_catalogue_test_only"):
             status = ("READY_TO_TEST" if configured else "MISSING_SERVER_SECRET") if p["integration_status"] == "adapter_present_unverified" else ("CATALOGUE_TEST_READY" if configured else "MISSING_SERVER_SECRET")
         elif p["integration_status"] == "verify_docs":
             status = "DOCUMENTATION_REVIEW_REQUIRED"
@@ -76,6 +79,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/v1/providers": lambda: provider_status(),
             "/api/v1/provider-status": lambda: provider_status(),
             "/api/v1/puntersedge/sports": lambda: read_json("puntersedge_sports.json", {"status":"NOT_IMPORTED","sports":[]}),
+            "/api/v1/sportscore/matches": lambda: read_json("sportscore_matches.json", {"status":"NOT_IMPORTED","matches":[]}),
             "/api/v1/matches/canonical": lambda: read_json("canonical_matches.json", []),
             "/api/v1/odds/matched": lambda: {"odds":read_json("matched_odds.json", []),"matched_count":0,"unmatched_count":0,"status":"NO_IMPORTED_DATA"},
         }
@@ -84,6 +88,71 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path.rstrip("/")
+        if path == "/api/v1/sportscore/sync":
+            if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled"})
+            if self.headers.get("X-WBR-Sync-Token","") != SYNC_TOKEN: return self._send(401, {"error":"unauthorized"})
+            try:
+                length = min(int(self.headers.get("Content-Length","0")), 4096)
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                return self._send(400, {"error":"invalid_json"})
+            mode = str(body.get("mode","date")).lower()
+            sport = str(body.get("sport","football")).lower()
+            if mode not in ("date","live"): return self._send(400, {"error":"invalid_mode","allowed":["date","live"]})
+            if sport not in ("football","basketball","cricket","tennis"):
+                return self._send(400, {"error":"invalid_sport","allowed":["football","basketball","cricket","tennis"]})
+            target = str(body.get("date") or date.today().isoformat())
+            if mode == "date":
+                try: date.fromisoformat(target)
+                except ValueError: return self._send(400, {"error":"invalid_date"})
+            from urllib.parse import urlencode
+            params = {"sport":sport,"limit":200}
+            if mode == "date":
+                params["date"] = target
+            else:
+                params["status"] = "live"
+            endpoint = "https://sportscore.com/api/v1/fixtures/?" + urlencode(params)
+            headers_in = {"Accept":"application/json","User-Agent":"WBR/1.0 (sports data integration)"}
+            if SPORTSCORE_KEY: headers_in["X-Api-Key"] = SPORTSCORE_KEY
+            try:
+                payload, headers = fetch_json(endpoint, headers_in)
+                raw_matches = payload.get("matches", payload.get("data", [])) if isinstance(payload,dict) else payload
+                if not isinstance(raw_matches,list):
+                    return self._send(502, {"provider":"SportScore","status":"UNEXPECTED_RESPONSE","message":"Expected a list of fixtures; raw response was not imported."})
+                stamp = datetime.now(timezone.utc).isoformat()
+                normalized = []
+                def pick(obj, *keys):
+                    for key in keys:
+                        value = obj.get(key) if isinstance(obj,dict) else None
+                        if value is not None: return value
+                    return None
+                for item in raw_matches:
+                    if not isinstance(item,dict): continue
+                    home = pick(item,"home","home_team","homeTeam","home_name")
+                    away = pick(item,"away","away_team","awayTeam","away_name")
+                    home_score = pick(item,"home_score","homeScore")
+                    away_score = pick(item,"away_score","awayScore")
+                    status_value = pick(item,"status","status_text","state")
+                    normalized.append({
+                        "id":pick(item,"id","fixture_id","match_id","slug"),
+                        "provider_match_id":pick(item,"id","fixture_id","match_id","slug"),
+                        "sport":sport,"homeTeam":home,"awayTeam":away,
+                        "home_score":home_score,"away_score":away_score,
+                        "score":str(home_score)+":"+str(away_score) if home_score is not None and away_score is not None else None,
+                        "status":status_value,"kickoff_utc":pick(item,"time","kickoff","kickoff_utc","start_time"),
+                        "competition_name":pick(item,"competition","league","tournament"),
+                        "source":"SportScore","retrieved_at_utc":stamp,"raw":item
+                    })
+                result = {"provider":"SportScore","status":"OK","mode":mode,"sport":sport,"date":target if mode=="date" else None,
+                          "fixtures":len(normalized),"retrieved_at_utc":stamp,"attribution_required":True,
+                          "api_key_configured":bool(SPORTSCORE_KEY)}
+                write_json("sportscore_matches.json",{"status":"OK","provider":"SportScore","retrieved_at_utc":stamp,"mode":mode,"sport":sport,"matches":normalized,"attribution":"Powered by SportScore"})
+                write_json("sportscore_last_sync.json",result)
+                return self._send(200,result)
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"SportScore","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"SportScore","status":"ERROR","message":str(e)[:300]})
         if path == "/api/v1/apifootball/sync":
             if not APIFOOTBALL_KEY: return self._send(503, {"error":"provider_not_configured","provider":"API-Football"})
             if not SYNC_TOKEN: return self._send(503, {"error":"sync_disabled"})

@@ -68,7 +68,61 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        path = urlparse(self.path).path.rstrip("/") or "/"
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        query = parse_qs(parsed.query)
+        if path == "/api/v1/sportscore/live":
+            sport = (query.get("sport", ["football"])[0] or "football").lower()
+            if sport not in ("football", "basketball", "cricket", "tennis"):
+                return self._send(400, {"error":"invalid_sport","allowed":["football","basketball","cricket","tennis"]})
+            try:
+                from urllib.parse import urlencode
+                payload, headers = fetch_json("https://sportscore.com/api/v1/fixtures/?" + urlencode({"sport":sport,"limit":50}), {"Accept":"application/json","User-Agent":"WBR/1.0"})
+                raw = payload.get("matches", payload.get("data", [])) if isinstance(payload,dict) else payload
+                if not isinstance(raw,list): return self._send(502, {"provider":"SportScore","status":"UNEXPECTED_RESPONSE","message":"Fixture list missing"})
+                stamp = datetime.now(timezone.utc).isoformat()
+                matches = []
+                for x in raw:
+                    if not isinstance(x,dict): continue
+                    hs=x.get("home_score"); aw=x.get("away_score")
+                    matches.append({"id":x.get("id") or x.get("slug"),"provider_match_id":x.get("id") or x.get("slug"),"sport":sport,"homeTeam":x.get("home"),"awayTeam":x.get("away"),"home_score":hs,"away_score":aw,"score":str(hs)+":"+str(aw) if hs is not None and aw is not None else None,"status":x.get("status"),"status_text":x.get("status_text"),"kickoff_utc":x.get("time"),"home_logo":x.get("home_logo"),"away_logo":x.get("away_logo"),"source":"SportScore","retrieved_at_utc":stamp})
+                return self._send(200, {"provider":"SportScore","status":"OK","sport":sport,"count":len(matches),"retrieved_at_utc":stamp,"attribution_required":True,"attribution_url":"https://sportscore.com/","matches":matches})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"SportScore","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"SportScore","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/leagues":
+            try:
+                season = query.get("season", ["2026"])[0]
+                payload, headers = fetch_json("https://api.openligadb.de/getavailableleagues/" + season, {"Accept":"application/json","User-Agent":"WBR/1.0"})
+                if not isinstance(payload,list): return self._send(502, {"provider":"OpenLigaDB","status":"UNEXPECTED_RESPONSE"})
+                return self._send(200, {"provider":"OpenLigaDB","status":"OK","season":season,"count":len(payload),"leagues":payload,"auth_required":False,"rate_limit_note":"60 requests/minute per IP; use last-change polling."})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
+        if path == "/api/v1/openligadb/matches":
+            league = (query.get("league", ["bl1"])[0] or "bl1").strip()
+            season = (query.get("season", ["2026"])[0] or "2026").strip()
+            if not league.replace("_","").isalnum() or not season.isdigit() or len(season)!=4:
+                return self._send(400, {"error":"invalid_league_or_season"})
+            try:
+                payload, headers = fetch_json("https://api.openligadb.de/getmatchdata/"+league+"/"+season, {"Accept":"application/json","User-Agent":"WBR/1.0"})
+                if not isinstance(payload,list): return self._send(502, {"provider":"OpenLigaDB","status":"UNEXPECTED_RESPONSE"})
+                stamp = datetime.now(timezone.utc).isoformat()
+                matches=[]
+                for x in payload:
+                    if not isinstance(x,dict): continue
+                    t1=x.get("team1") or {}; t2=x.get("team2") or {}
+                    results=x.get("matchResults") or []
+                    ft=next((r for r in reversed(results) if r.get("resultTypeID")==2),None)
+                    ht=next((r for r in reversed(results) if r.get("resultTypeID")==1),None)
+                    matches.append({"id":x.get("matchID"),"provider_match_id":x.get("matchID"),"sport":"Football","competition_name":x.get("leagueName"),"league_shortcut":x.get("leagueShortcut"),"season":x.get("leagueSeason"),"round":(x.get("group") or {}).get("groupName"),"kickoff_utc":x.get("matchDateTimeUTC") or x.get("matchDateTime"),"homeTeam":t1.get("teamName"),"awayTeam":t2.get("teamName"),"home_team_id":t1.get("teamId"),"away_team_id":t2.get("teamId"),"home_logo":t1.get("teamIconUrl"),"away_logo":t2.get("teamIconUrl"),"score":str(ft.get("pointsTeam1"))+":"+str(ft.get("pointsTeam2")) if ft else None,"halftime_score":str(ht.get("pointsTeam1"))+":"+str(ht.get("pointsTeam2")) if ht else None,"status":"finished" if x.get("matchIsFinished") else "scheduled","source":"OpenLigaDB","retrieved_at_utc":stamp})
+                return self._send(200, {"provider":"OpenLigaDB","status":"OK","league":league,"season":season,"count":len(matches),"retrieved_at_utc":stamp,"matches":matches,"auth_required":False})
+            except urllib.error.HTTPError as e:
+                return self._send(e.code, {"provider":"OpenLigaDB","status":"HTTP_ERROR","http_status":e.code,"message":e.read(500).decode("utf-8","replace")})
+            except Exception as e:
+                return self._send(502, {"provider":"OpenLigaDB","status":"ERROR","message":str(e)[:250]})
         if path == "/api-check":
             raw = "<!doctype html><html lang='de'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>WBR API-Prüfung</title><style>body{font:16px system-ui;background:#08111f;color:#eef;padding:20px;max-width:850px;margin:auto}section{background:#132238;border:1px solid #29405e;border-radius:12px;padding:16px;margin:14px 0}button{padding:12px 18px;background:#27d4c5;border:0;border-radius:8px;font-weight:bold}pre{white-space:pre-wrap;overflow-wrap:anywhere}.ok{color:#a7e66f}.bad{color:#ff8585}</style><h1>WBR · API-Prüfung</h1><p>Diese Seite läuft direkt auf demselben Backend. Kein Cross-Origin-Aufruf von GitHub Pages.</p><section><button onclick='run()'>Jetzt prüfen</button><p id='health'>Warte auf Prüfung.</p></section><section><h2>Provider-Status</h2><pre id='out'>Noch keine Daten.</pre></section><script>async function run(){let h=document.getElementById('health'),o=document.getElementById('out');h.textContent='Prüfe Health …';o.textContent='Lade Provider …';try{let a=await fetch('/health',{cache:'no-store'});let at=await a.text();if(!a.ok)throw Error('Health HTTP '+a.status+': '+at);h.innerHTML='<span class=ok>Backend erreichbar · HTTP '+a.status+'</span>';let b=await fetch('/api/v1/providers',{cache:'no-store'});let bt=await b.text();if(!b.ok)throw Error('Provider HTTP '+b.status+': '+bt);let d=JSON.parse(bt);o.textContent=JSON.stringify(d,null,2)}catch(e){h.innerHTML='<span class=bad>Fehler: '+e.message+'</span>';o.textContent='Provider-Prüfung fehlgeschlagen.'}}run();</script></html>".encode("utf-8")
             self.send_response(200)
